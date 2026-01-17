@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>프로 스마트 플로팅 타이머</title>
+    <style>
+        /* [디자인] 깔끔하고 눈에 잘 띄는 스타일 */
+        :root {
+            --primary: #007aff;
+            --pause: #ff9500;
+            --stop: #ff3b30;
+            --bg: #f5f5f7;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: var(--bg);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 40px;
+            border-radius: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        /* [숫자판] 최대한 크게 */
+        #display {
+            font-size: 90px;
+            font-weight: 800;
+            color: #1d1d1f;
+            margin: 20px 0;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* [입력창] 분, 초 입력 영역 */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .input-box {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        input {
+            width: 80px;
+            height: 50px;
+            font-size: 24px;
+            text-align: center;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            background: #fff;
+        }
+
+        label { font-size: 12px; color: #888; font-weight: bold; }
+
+        /* [버튼 스타일] */
+        .button-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            border: none;
+            border-radius: 16px;
+            padding: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-set { background: #1d1d1f; color: white; grid-column: span 2; }
+        .btn-start { background: var(--primary); color: white; height: 70px; font-size: 24px; grid-column: span 2; }
+        .btn-pause { background: var(--pause); color: white; height: 70px; font-size: 24px; grid-column: span 2; }
+        .btn-pip { background: #34c759; color: white; grid-column: span 2; }
+        .btn-reset { background: #e5e5ea; color: #1d1d1f; grid-column: span 2; margin-top: 10px; }
+
+        button:active { transform: scale(0.96); }
+
+        /* 숨김 요소 (기능용) */
+        #pipVideo { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div style="color: var(--primary); font-weight: bold; letter-spacing: 2px;">SMART TIMER PRO</div>
+    
+    <!-- 큰 시간 표시 창 -->
+    <div id="display">00:00</div>
+
+    <!-- 직접 입력창 -->
+    <div class="input-group">
+        <div class="input-box">
+            <input type="number" id="minInput" placeholder="0" min="0" max="999">
+            <label>분(MIN)</label>
+        </div>
+        <div style="font-size: 30px; font-weight: bold; margin-top: -20px;">:</div>
+        <div class="input-box">
+            <input type="number" id="secInput" placeholder="0" min="0" max="59">
+            <label>초(SEC)</label>
+        </div>
+    </div>
+
+    <!-- 기능 버튼들 -->
+    <div class="button-grid">
+        <button class="btn-set" onclick="setCustomTime()">시간 설정 적용</button>
+        <button class="btn-start" id="mainBtn" onclick="toggleTimer()">시작</button>
+        <button class="btn-pip" onclick="enablePiP()">화면 위에 띄우기 (유튜브용)</button>
+        <button class="btn-reset" onclick="resetTimer()">초기화</button>
+    </div>
+</div>
+
+<!-- 플로팅 화면 구현을 위한 투명 장치 -->
+<video id="pipVideo" autoplay muted playsinline></video>
+<canvas id="pipCanvas" width="300" height="150" style="display:none;"></canvas>
+
+<script>
+    let timeLeft = 0; // 남은 시간 (초)
+    let timerId = null;
+    let isPaused = true;
+
+    const display = document.getElementById('display');
+    const mainBtn = document.getElementById('mainBtn');
+    const minInput = document.getElementById('minInput');
+    const secInput = document.getElementById('secInput');
+    const pipVideo = document.getElementById('pipVideo');
+    const pipCanvas = document.getElementById('pipCanvas');
+    const ctx = pipCanvas.getContext('2d');
+
+    // [기능] 사용자가 입력한 분/초를 숫자로 변환
+    function setCustomTime() {
+        const mins = parseInt(minInput.value) || 0;
+        const secs = parseInt(secInput.value) || 0;
+        
+        if (mins === 0 && secs === 0) {
+            alert("시간을 입력해주세요!");
+            return;
+        }
+        
+        pauseTimer();
+        timeLeft = (mins * 60) + secs;
+        updateDisplay();
+    }
+
+    // [기능] 화면과 플로팅 창에 시간 표시
+    function updateDisplay() {
+        const m = Math.floor(timeLeft / 60);
+        const s = timeLeft % 60;
+        const timeStr = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        
+        display.innerText = timeStr;
+        document.title = timeStr + " - 타이머";
+        
+        // 플로팅(PiP) 창 업데이트
+        drawPiP(timeStr);
+    }
+
+    // [기능] 시작/일시정지 제어
+    function toggleTimer() {
+        if (timeLeft <= 0) {
+            alert("시간을 먼저 설정해주세요.");
+            return;
+        }
+
+        if (isPaused) {
+            startTimer();
+        } else {
+            pauseTimer();
+        }
+    }
+
+    function startTimer() {
+        isPaused = false;
+        mainBtn.innerText = "일시정지";
+        mainBtn.className = "btn-pause";
+        
+        timerId = setInterval(() => {
+            if (timeLeft > 0) {
+                timeLeft--;
+                updateDisplay();
+            } else {
+                finish();
+            }
+        }, 1000);
+    }
+
+    function pauseTimer() {
+        isPaused = true;
+        mainBtn.innerText = "다시 시작";
+        mainBtn.className = "btn-start";
+        clearInterval(timerId);
+    }
+
+    function resetTimer() {
+        pauseTimer();
+        timeLeft = 0;
+        minInput.value = '';
+        secInput.value = '';
+        updateDisplay();
+        mainBtn.innerText = "시작";
+        mainBtn.className = "btn-start";
+    }
+
+    // [기능] 종료 알림 (음성 + 진동)
+    function finish() {
+        pauseTimer();
+        const msg = new SpeechSynthesisUtterance("설정한 시간이 종료되었습니다.");
+        window.speechSynthesis.speak(msg);
+        
+        if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
+        alert("타이머 종료!");
+        resetTimer();
+    }
+
+    // [핵심: PiP] 유튜브 위로 띄우기
+    async function enablePiP() {
+        try {
+            const stream = pipCanvas.captureStream();
+            pipVideo.srcObject = stream;
+            await pipVideo.play();
+            await pipVideo.requestPictureInPicture();
+        } catch (e) {
+            alert("이 브라우저는 항상 위 기능을 지원하지 않거나 설정이 필요합니다.");
+        }
+    }
+
+    // [디자인: PiP 창] 검은 배경에 선명한 흰색 숫자
+    function drawPiP(text) {
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, pipCanvas.width, pipCanvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 70px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, pipCanvas.width / 2, pipCanvas.height / 2);
+    }
+
+    // [스마트 기능] 유튜브 등 미디어 재생과 연동
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: '스마트 타이머 작동 중' });
+        navigator.mediaSession.setActionHandler('play', () => startTimer());
+        navigator.mediaSession.setActionHandler('pause', () => pauseTimer());
+    }
+
+    // 초기 실행 시 00:00 그리기
+    updateDisplay();
+</script>
+
+</body>
+</html>
